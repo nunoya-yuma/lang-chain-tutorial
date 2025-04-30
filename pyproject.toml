@@ -7,6 +7,8 @@ requires-python = ">=3.12"
 dependencies = [
     "dotenv>=0.9.9",
     "langchain-community>=0.3.23",
+    "langchain-core>=0.3.56",
     "langchain[openai]>=0.3.24",
+    "langgraph>=0.4.0",
     "pypdf>=5.4.0",
 ]
