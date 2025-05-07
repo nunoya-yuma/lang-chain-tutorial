@@ -29,6 +29,8 @@ class WeatherAndMathAgent:
     def __init__(self):
         self._client = None
         self._agent = None
+        self._model = init_chat_model("gpt-4o-mini", model_provider="openai")
+        self._memory = MemorySaver()
 
         thread_id = str(uuid.uuid4())
         self._config = {"configurable": {"thread_id": thread_id}}
@@ -57,12 +59,10 @@ class WeatherAndMathAgent:
         try:
             await self._client.__aenter__()
 
-            model = init_chat_model("gpt-4o-mini", model_provider="openai")
-            memory = MemorySaver()
             self._agent = create_react_agent(
-                model,
+                self._model,
                 self._client.get_tools(),
-                checkpointer=memory,
+                checkpointer=self._memory,
             )
             yield self
         finally:
