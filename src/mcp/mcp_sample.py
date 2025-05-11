@@ -24,12 +24,14 @@ from langgraph.checkpoint.memory import MemorySaver
 import uuid
 from contextlib import asynccontextmanager
 import argparse
+from typing import List
 
 
-class WeatherAndMathAgent:
+class AgentWithMCP:
     def __init__(self, model_provider="openai"):
         self._client = None
         self._agent = None
+        self._mcp_config = {}
 
         # Set model based on provider
         if model_provider == "openai":
@@ -52,25 +54,33 @@ class WeatherAndMathAgent:
         print(f"Thread ID: {thread_id}")
         print(f"Using model provider: {model_provider}")
 
+    def register_mcp_stdio(self, name: str, command: List[str]):
+        self._mcp_config[name] = {
+            "command": command[0],
+            "args": command[1:],
+            "transport": "stdio"
+        }
+
+    def register_mcp_sse(self, name: str, url: str):
+        self._mcp_config[name] = {
+            "url": url,
+            "transport": "sse"
+        }
+
     @asynccontextmanager
     async def session(self):
-        current_dir = Path(os.path.dirname(os.path.abspath(__file__)))
-        math_server_path = str(current_dir / "mcp_math_server.py")
+        if self._mcp_config == {}:
+            raise ValueError("No MCP servers registered")
+        if self._client is not None:
+            raise ValueError("MCP client already created")
+        if self._agent is not None:
+            raise ValueError("MCP agent already created")
+        if self._model is None:
+            raise ValueError("No model specified")
+        if self._memory is None:
+            raise ValueError("No memory specified")
 
-        self._client = MultiServerMCPClient(
-            {
-                "math": {
-                    "command": "uv",
-                    "args": ["run", math_server_path],
-                    "transport": "stdio",
-                },
-                "weather": {
-                    "url": "http://localhost:8000/sse",
-                    "transport": "sse",
-                }
-            }
-        )
-
+        self._client = MultiServerMCPClient(self._mcp_config)
         try:
             await self._client.__aenter__()
 
@@ -111,12 +121,20 @@ async def main():
     parser.add_argument(
         "--provider",
         choices=["openai", "google_genai"],
-        default="openai",
+        default="google_genai",
         help="Model provider to use (openai or google_genai)"
     )
     args = parser.parse_args()
 
-    agent = WeatherAndMathAgent(model_provider=args.provider)
+    agent = AgentWithMCP(
+        model_provider=args.provider
+    )
+
+    current_dir = Path(os.path.dirname(os.path.abspath(__file__)))
+    math_server_path = str(current_dir / "mcp_math_server.py")
+    agent.register_mcp_stdio("math", ["uv", "run", math_server_path])
+    agent.register_mcp_sse("weather", "http://localhost:8000/sse")
+
     async with agent.session() as agent_session:
         _ = await agent_session.send_message("what's (3 + 5) x 12")
         _ = await agent_session.send_message(
