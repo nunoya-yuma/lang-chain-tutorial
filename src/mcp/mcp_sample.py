@@ -55,6 +55,7 @@ class AgentWithMCP:
         Raises:
             ValueError: If an unsupported model provider is specified
         """
+        self._session_active = False
         self._client = None
         self._agent = None
         self._mcp_config = {}
@@ -93,6 +94,11 @@ class AgentWithMCP:
             command (List[str]): Command and args to start the server.
                 [0] is the command, [1:] are the arguments.
         """
+        if self._session_active:
+            raise RuntimeError(
+                "Cannot register MCP server while session is active"
+            )
+
         self._mcp_config[name] = {
             "command": command[0],
             "args": command[1:],
@@ -111,6 +117,11 @@ class AgentWithMCP:
             name (str): Unique identifier for this MCP server
             url (str): Full URL of the SSE endpoint
         """
+        if self._session_active:
+            raise RuntimeError(
+                "Cannot register MCP server while session is active"
+            )
+
         self._mcp_config[name] = {
             "url": url,
             "transport": "sse"
@@ -153,6 +164,7 @@ class AgentWithMCP:
         self._client = MultiServerMCPClient(self._mcp_config)
         try:
             await self._client.__aenter__()
+            self._session_active = True
 
             self._agent = create_react_agent(
                 self._model,
@@ -161,6 +173,7 @@ class AgentWithMCP:
             )
             yield self
         finally:
+            self._session_active = False
             await self._client.__aexit__(None, None, None)
 
     async def send_message(self, message: str) -> str:
