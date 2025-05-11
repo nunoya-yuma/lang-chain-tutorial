@@ -28,7 +28,33 @@ from typing import List
 
 
 class AgentWithMCP:
+    """
+    Agent that integrates with MCP (Model Context Protocol) servers.
+
+    This class provides functionality to interact with both stdio-based and
+    SSE-based MCP servers, allowing dynamic registration of different types and
+    handling communication through a unified interface.
+
+    Attributes:
+        _client: MCP client instance
+        _agent: Agent instance for handling requests
+        _mcp_config: Configuration dictionary for MCP servers
+        _model: Language model instance
+        _memory: Memory manager for maintaining conversation state
+    """
+
     def __init__(self, model_provider="openai"):
+        """
+        Initialize the agent with a specified model provider.
+
+        Args:
+            model_provider (str): Provider name to use:
+                - "openai": Uses GPT-4 mini model
+                - "google_genai": Uses Gemini flash model
+
+        Raises:
+            ValueError: If an unsupported model provider is specified
+        """
         self._client = None
         self._agent = None
         self._mcp_config = {}
@@ -54,14 +80,37 @@ class AgentWithMCP:
         print(f"Thread ID: {thread_id}")
         print(f"Using model provider: {model_provider}")
 
-    def register_mcp_stdio(self, name: str, command: List[str]):
+    def register_mcp_stdio(self, name: str, command: List[str]) -> None:
+        """
+        Register a stdio-based MCP server.
+
+        This method configures a server that communicates through standard
+        input/output. The server will be started using the provided command
+        when the session begins.
+
+        Args:
+            name (str): Unique identifier for this MCP server
+            command (List[str]): Command and args to start the server.
+                [0] is the command, [1:] are the arguments.
+        """
         self._mcp_config[name] = {
             "command": command[0],
             "args": command[1:],
             "transport": "stdio"
         }
 
-    def register_mcp_sse(self, name: str, url: str):
+    def register_mcp_sse(self, name: str, url: str) -> None:
+        """
+        Register an SSE-based MCP server.
+
+        This method configures a server that communicates through Server-Sent
+        Events (SSE). The server should already be running and accessible at
+        the provided URL.
+
+        Args:
+            name (str): Unique identifier for this MCP server
+            url (str): Full URL of the SSE endpoint
+        """
         self._mcp_config[name] = {
             "url": url,
             "transport": "sse"
@@ -69,6 +118,27 @@ class AgentWithMCP:
 
     @asynccontextmanager
     async def session(self):
+        """
+        Create and manage a session with all registered MCP servers.
+
+        This context manager handles the lifecycle of MCP server connections:
+        1. Validates the configuration and state
+        2. Establishes connections to all registered servers
+        3. Creates an agent with access to server tools
+        4. Cleans up connections when the session ends
+
+        Yields:
+            AgentWithMCP: The agent instance with active connections to
+                         registered MCP servers
+
+        Raises:
+            ValueError: If any of these conditions are met:
+                      - No MCP servers have been registered
+                      - MCP client has already been created
+                      - Agent has already been created
+                      - No language model has been specified
+                      - No memory system has been specified
+        """
         if self._mcp_config == {}:
             raise ValueError("No MCP servers registered")
         if self._client is not None:
@@ -93,7 +163,23 @@ class AgentWithMCP:
         finally:
             await self._client.__aexit__(None, None, None)
 
-    async def send_message(self, message):
+    async def send_message(self, message: str) -> str:
+        """
+        Send a message to the agent and receive a response.
+
+        This method sends a message to the agent, which may interact with
+        registered MCP servers to generate a response. The interaction is
+        streamed, with each response part being displayed as it's generated.
+
+        Args:
+            message (str): The message to send to the agent
+
+        Returns:
+            str: The complete response from the agent
+
+        Note:
+            This method should only be called within a session context.
+        """
         result = ""
 
         structured_message = {
